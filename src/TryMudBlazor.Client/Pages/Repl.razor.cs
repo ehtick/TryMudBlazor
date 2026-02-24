@@ -163,7 +163,7 @@
             this.Loading = true;
             this.LoaderText = "Processing";
 
-            await Task.Delay(10); // Ensure rendering has time to be called
+            await Task.Yield();
 
             CompileToAssemblyResult compilationResult = null;
             CodeFile mainComponent = null;
@@ -204,7 +204,7 @@
             if (compilationResult?.AssemblyBytes?.Length > 0)
             {
                 // Make sure the DLL is updated before reloading the user page
-                await this.JsRuntime.InvokeVoidAsync(Try.CodeExecution.UpdateUserComponentsDll, compilationResult.AssemblyBytes);
+                this.JsRuntime.InvokeVoid(Try.CodeExecution.UpdateUserComponentsDll, compilationResult.AssemblyBytes);
 
                 // TODO: Add error page in iframe
                 this.JsRuntime.InvokeVoid(Try.ReloadIframe, "user-page-window", MainUserPagePath);
@@ -271,29 +271,28 @@
             this.activeCodeFile.Content = this.CodeEditorComponent.GetCode();
         }
 
-        private Task UpdateLoaderTextAsync(string loaderText)
+        private async Task UpdateLoaderTextAsync(string loaderText)
         {
             this.LoaderText = loaderText;
 
             this.StateHasChanged();
 
-            return Task.Delay(10); // Ensure rendering has time to be called
+            await Task.Yield();
         }
 
-        private async void UpdateTheme()
+        private async Task UpdateTheme()
         {
             await LayoutService.ToggleDarkMode();
             string theme = LayoutService.IsDarkMode ? "vs-dark" : "default";
-            this.JsRuntime.InvokeVoid(Try.Editor.SetTheme, theme);
+            await JsRuntime.InvokeVoidAsync(Try.Editor.SetTheme, theme);
             // LayoutService calls StateHasChanged, we need the updated <style> tags for updateIframeTheme to work
             await Task.Yield();
             await JsRuntime.InvokeVoidAsync("updateIframeTheme");
         }
 
-        private async Task ClearCache()
+        private void ClearCache()
         {
-            await JsRuntime.InvokeVoidAsync("Try.clearCache");
-            NavigationManager.NavigateTo(NavigationManager.BaseUri, true);
+            NavigationManager.NavigateTo(NavigationManager.BaseUri, forceLoad: true);
         }
     }
 }

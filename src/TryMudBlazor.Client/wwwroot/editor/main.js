@@ -3,7 +3,6 @@ require.config({ paths: { 'vs': 'lib/monaco-editor/min/vs' } });
 let _dotNetInstance;
 
 const throttleLastTimeFuncNameMappings = {};
-const CACHE_NAME = 'dotnet-resources-/';
 
 function registerLangugageProvider(language) {
     monaco.languages.registerCompletionItemProvider(language, {
@@ -99,20 +98,6 @@ window.Try = {
             setTimeout(() => iFrame.src = newSrc);
         }
     },
-    clearCache: async function () {
-        const cacheName = CACHE_NAME;
-        try {
-            const cache = await caches.open(cacheName);
-            const keys = await cache.keys();
-
-            await Promise.all(keys.map(key => {
-                return cache.delete(key);
-            }));
-            console.log(`Cache '${cacheName}' has been cleared.`);
-        } catch (error) {
-            console.error('Error clearing cache:', error);
-        }
-    },
     dispose: function () {
         _dotNetInstance = null;
         window.removeEventListener('keydown', onKeyDown);
@@ -193,69 +178,33 @@ window.Try.Editor = window.Try.Editor || (function () {
 
 window.Try.CodeExecution = window.Try.CodeExecution || (function () {
     const UNEXPECTED_ERROR_MESSAGE = 'An unexpected error has occurred. Please try again later or contact the team.';
-
-    function putInCacheStorage(cache, fileName, fileBytes, contentType) {
-        const cachedResponse = new Response(
-            new Blob([fileBytes]),
-            {
-                headers: {
-                    'Content-Type': contentType || 'application/octet-stream',
-                    'Content-Length': fileBytes.length.toString()
-                }
-            });
-
-        return cache.put(fileName, cachedResponse);
-    }
-
-    function convertBase64StringToBytes(base64String) {
-        const binaryString = window.atob(base64String);
-
-        const bytesCount = binaryString.length;
-        const bytes = new Uint8Array(bytesCount);
-        for (let i = 0; i < bytesCount; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        return bytes;
-    }
+    const USER_COMPONENTS_DLL_STORAGE_KEY = 'TryMudBlazor.UserComponentsDllBase64';
 
     return {
-        getCompilationDlls: async function (dllNames) {
-            const cache = await caches.open(CACHE_NAME);
-            const keys = await cache.keys();
-            const dllsData = [];
-            await Promise.all(dllNames.map(async (dll) => {
-                // Requires WasmFingerprintAssets to be enabled
-                const pattern = new RegExp(`${dll}.[^\\.]*\\.dll`, 'i');
-                const dllKey = keys.find(x => pattern.test(x.url)).url.substring(window.location.origin.length);
-                const response = await cache.match(dllKey);
-                const bytes = new Uint8Array(await response.arrayBuffer());
-                dllsData.push(bytes);
-            }));
+        updateUserComponentsDll: function (dllData) {
+            if (!dllData) return;
 
-            return dllsData;
-        },
-
-        updateUserComponentsDll: async function (fileContent) {
-            if (!fileContent) {
-                return;
+            // .NET byte[] arrives as a Uint8Array via the runtime's byte-array interop optimization.
+            // A plain string means the caller passed a pre-encoded base64 constant (e.g. DefaultUserComponentsAssemblyBytes).
+            let dllBase64;
+            if (typeof dllData === 'string') {
+                dllBase64 = dllData;
+            } else {
+                // Uint8Array → base64, processed in chunks to avoid call-stack overflow on large arrays.
+                let binary = '';
+                const chunk = 8192;
+                for (let i = 0; i < dllData.length; i += chunk) {
+                    binary += String.fromCharCode(...dllData.subarray(i, i + chunk));
+                }
+                dllBase64 = btoa(binary);
             }
 
-            const cache = await caches.open(CACHE_NAME);
-
-            const cacheKeys = await cache.keys();
-            // Requires WasmFingerprintAssets to be enabled
-            const userComponentsDllCacheKey = cacheKeys.find(x => /Try\.UserComponents\.[^/]*\.dll/.test(x.url));
-            if (!userComponentsDllCacheKey || !userComponentsDllCacheKey.url) {
+            try {
+                window.sessionStorage.setItem(USER_COMPONENTS_DLL_STORAGE_KEY, dllBase64);
+            } catch (error) {
+                console.error('Failed to store compiled user components DLL', error);
                 alert(UNEXPECTED_ERROR_MESSAGE);
-                return;
             }
-
-            const dllPath = userComponentsDllCacheKey.url.substring(window.location.origin.length);
-            fileContent = typeof fileContent === 'number' ? BINDING.conv_string(fileContent) : fileContent // tranfering raw pointer to the memory of the mono string
-            const dllBytes = typeof fileContent === 'string' ? convertBase64StringToBytes(fileContent) : fileContent;
-
-            await putInCacheStorage(cache, dllPath, dllBytes);
         }
     };
 }());
