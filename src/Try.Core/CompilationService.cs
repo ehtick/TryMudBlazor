@@ -38,12 +38,6 @@
             "@using MudBlazor"
         ];
 
-        private const string MudBlazorServices = @"
-<MudDialogProvider FullWidth=""true"" MaxWidth=""MaxWidth.ExtraSmall"" />
-<MudSnackbarProvider/>
-
-";
-
         // Creating the initial compilation + reading references is on the order of 250ms without caching
         // so making sure it doesn't happen for each run.
         private static CSharpCompilation _baseCompilation;
@@ -71,6 +65,7 @@
                 typeof(AssemblyTargetedPatchBandAttribute).Assembly, // System.Private.CoreLib
                 typeof(NavLink).Assembly, // Microsoft.AspNetCore.Components.Web
                 typeof(IQueryable).Assembly, // System.Linq.Expressions
+                typeof(Queryable).Assembly, // System.Linq.Queryable
                 typeof(HttpClientJsonExtensions).Assembly, // System.Net.Http.Json
                 typeof(HttpClient).Assembly, // System.Net.Http
                 typeof(IJSRuntime).Assembly, // Microsoft.JSInterop
@@ -129,6 +124,7 @@
             var codeHash = ComputeCodeHash(codeFiles);
             if (_cachedResult != null && _lastCodeHash == codeHash)
             {
+                _cachedResult.IsFromCache = true;
                 return _cachedResult;
             }
 
@@ -258,9 +254,7 @@
             {
                 if (codeFile.Type == CodeFileType.Razor)
                 {
-                    var fileContent = index == 0 ? MudBlazorServices : string.Empty;
-                    fileContent += codeFile.Content;
-                    var projectItem = CreateRazorProjectItem(codeFile.Path, fileContent);
+                    var projectItem = CreateRazorProjectItem(codeFile.Path, codeFile.Content);
 
                     var codeDocument = projectEngine.ProcessDeclarationOnly(projectItem);
                     var cSharpDocument = codeDocument.GetCSharpDocument();
